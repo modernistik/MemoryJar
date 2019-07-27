@@ -1,6 +1,9 @@
 # MemoryJar
 
+[![CI Status](https://img.shields.io/travis/modernistik/MemoryJar.svg?style=flat)](https://travis-ci.org/modernistik/MemoryJar)
 [![Version](https://img.shields.io/cocoapods/v/MemoryJar.svg?style=flat)](https://cocoapods.org/pods/MemoryJar)
+[![License](https://img.shields.io/cocoapods/l/MemoryJar.svg?style=flat)](https://cocoapods.org/pods/MemoryJar)
+[![Platform](https://img.shields.io/cocoapods/p/MemoryJar.svg?style=flat)](https://cocoapods.org/pods/MemoryJar)
 
 MemoryJar is a fast and efficient and thread-safe persistent string caching library that includes capacity management (LRU) and support for age expiration. It utilizes both in-memory and disk storage, supporting asynchronous writes for speed. This library was inspired by the caching mechanism on the Parse iOS SDK. 
 
