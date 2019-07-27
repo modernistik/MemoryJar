@@ -25,20 +25,13 @@ Two layer persistent string caching library with capacity management through LRU
   s.license          = { :type => 'MIT', :file => 'LICENSE' }
   s.author           = { 'Anthony Persaud' => 'persaud@modernistik.com' }
   s.source           = { :git => 'https://github.com/modernistik/MemoryJar.git', :tag => s.version.to_s }
-  s.social_media_url = 'https://twitter.com/modernistik'
+  s.social_media_url = 'https://www.modernistik.com/'
 
   s.ios.deployment_target = '10.0'
   s.swift_version = ["4.2", "5.0"]
 
   s.source_files = 'MemoryJar/**/*'
   
-  # s.resource_bundles = {
-  #   'MemoryJar' => ['MemoryJar/Assets/*.png']
-  # }
-
-  # s.public_header_files = 'Pod/Classes/**/*.h'
-  # s.frameworks = 'UIKit', 'MapKit'
-  # s.dependency 'AFNetworking', '~> 2.3'
 end
 
 # To publish `pod trunk push MemoryJar.podspec`
