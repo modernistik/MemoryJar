@@ -1,13 +1,20 @@
 # MemoryJar
+MemoryJar is a fast and efficient and thread-safe persistent string caching library that includes capacity management (LRU) and support for age expiration. It utilizes both in-memory and disk storage, supporting asynchronous writes for speed. This library was inspired by the caching mechanism on the Parse iOS SDK.
+
+This caching library is most useful when building a caching system for managing a REST API.
 
 [![CI Status](https://img.shields.io/travis/modernistik/MemoryJar.svg?style=flat)](https://travis-ci.org/modernistik/MemoryJar)
 [![Version](https://img.shields.io/cocoapods/v/MemoryJar.svg?style=flat)](https://cocoapods.org/pods/MemoryJar)
 [![License](https://img.shields.io/cocoapods/l/MemoryJar.svg?style=flat)](https://cocoapods.org/pods/MemoryJar)
 [![Platform](https://img.shields.io/cocoapods/p/MemoryJar.svg?style=flat)](https://cocoapods.org/pods/MemoryJar)
 
-MemoryJar is a fast and efficient and thread-safe persistent string caching library that includes capacity management (LRU) and support for age expiration. It utilizes both in-memory and disk storage, supporting asynchronous writes for speed. This library was inspired by the caching mechanism on the Parse iOS SDK. 
+## Installation
 
-This caching library is most useful when building a caching system for managing a REST API. 
+To install it, simply add the following line to your Podfile:
+
+```ruby
+pod "MemoryJar"
+```
 
 ## Usage
 
@@ -18,9 +25,9 @@ import MemoryJar
 let cache = MemoryJar.shared
 
 // Simple
-cache["company"] = "Modernistik" 
+cache["company"] = "Modernistik"
 // retrieve (no expiration)
-let company = cache["company"] 
+let company = cache["company"]
 
 // Some API response
 let json = """
@@ -48,13 +55,12 @@ if let result = cache.get(forKey: cacheKey, maxAge: 86400) {
 cache.removeAllObjects()
 ```
 
-## Installation
+## Todo
+* Support clearing specific url paths matching a pattern.
 
-To install it, simply add the following line to your Podfile:
+## Author
 
-```ruby
-pod "MemoryJar"
-```
+Anthony Persaud, https://www.modernistik.com
 
 ## License
 
