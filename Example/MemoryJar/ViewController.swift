@@ -3,14 +3,13 @@
 //  MemoryJar
 //
 //  Created by apersaud on 07/21/2019.
-//  Copyright (c) 2019 apersaud. All rights reserved.
+//  Copyright (c) 2019 Modernistik LLC. All rights reserved.
 //
 
-import UIKit
 import MemoryJar
+import UIKit
 
 class ViewController: UIViewController {
-
     override func viewDidLoad() {
         super.viewDidLoad()
         // Do any additional setup after loading the view, typically from a nib.
@@ -20,6 +19,4 @@ class ViewController: UIViewController {
         super.didReceiveMemoryWarning()
         // Dispose of any resources that can be recreated.
     }
-
 }
-
