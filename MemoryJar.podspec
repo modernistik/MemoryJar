@@ -28,7 +28,7 @@ Two layer persistent string caching library with capacity management through LRU
   s.social_media_url = 'https://www.modernistik.com/'
 
   s.ios.deployment_target = '10.0'
-  s.swift_version = "5.0"
+  s.swift_version = ['5.0','5.1']
 
   s.source_files = 'MemoryJar/**/*'
 
