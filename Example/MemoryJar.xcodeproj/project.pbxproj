@@ -31,7 +31,7 @@
 		1E4B5F25024DBD3D3DCB8735 /* LICENSE */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text; name = LICENSE; path = ../LICENSE; sourceTree = "<group>"; };
 		1EE5F538A0E6F517CCE5449A /* Pods-MemoryJar_Example.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-MemoryJar_Example.release.xcconfig"; path = "Target Support Files/Pods-MemoryJar_Example/Pods-MemoryJar_Example.release.xcconfig"; sourceTree = "<group>"; };
 		24421EF3A0F4DF65FB0A5D0A /* Pods_MemoryJar_Tests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_MemoryJar_Tests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
-		2BEABAD2FF119560D0154230 /* MemoryJar.podspec */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text; name = MemoryJar.podspec; path = ../MemoryJar.podspec; sourceTree = "<group>"; };
+		2BEABAD2FF119560D0154230 /* MemoryJar.podspec */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text; name = MemoryJar.podspec; path = ../MemoryJar.podspec; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.ruby; };
 		45A20EB222E4B97C00F2417D /* MemoryJar.playground */ = {isa = PBXFileReference; lastKnownFileType = file.playground; path = MemoryJar.playground; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.swift; };
 		607FACD01AFB9204008FA782 /* MemoryJar_Example.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MemoryJar_Example.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		607FACD41AFB9204008FA782 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -209,7 +209,7 @@
 			isa = PBXProject;
 			attributes = {
 				LastSwiftUpdateCheck = 0830;
-				LastUpgradeCheck = 1020;
+				LastUpgradeCheck = 1250;
 				ORGANIZATIONNAME = CocoaPods;
 				TargetAttributes = {
 					607FACCF1AFB9204008FA782 = {
@@ -400,6 +400,7 @@
 				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
@@ -455,6 +456,7 @@
 				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
 				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
 				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
 				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
 				CLANG_WARN_STRICT_PROTOTYPES = YES;
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;

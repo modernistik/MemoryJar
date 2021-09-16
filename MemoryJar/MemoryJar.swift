@@ -11,6 +11,7 @@ import Foundation
 public final class MemoryJar {
     /// Shared singleton with default cache location.
     public static let shared = { MemoryJar() }()
+
     // Object to hold in memory. NSCache is not Swift compat, therefore must
     // inheirt from NSObject.
     private class Memo: NSObject {
@@ -50,15 +51,16 @@ public final class MemoryJar {
     private var lastDiskCacheUpdatedDate: Date?
     private var currentDisckCacheSize: Int = 0
     private var currentMetaRefs = [ContentRef]()
-
+    // Default FileManager is thread-safe
     private let fileManager = FileManager.default
     public let cacheDirectoryURL: URL
 
     // In-memory cache which will auto-purge entries on low memory warnings.
+    // NSCache is thread-safe, no need to wrap queue.sync
     private var memoryCache = NSCache<NSString, Memo>()
 
     // write/read queue
-    private let queue = DispatchQueue(label: "memory.jar")
+    private let queue = DispatchQueue(label: "memory.jar", attributes: .concurrent)
 
     public var cacheDirectoryPath: String {
         // ok
@@ -84,19 +86,17 @@ public final class MemoryJar {
     public func hasValue(forKey key: String, maxAge: TimeInterval = MemoryJar.defaultMaxAge) -> Bool {
         // memory pointer returned, not full cost retrieval.
         if let memo = memoryCache.object(forKey: key as NSString),
-            Date().timeIntervalSince(memo.creationDate) < maxAge {
+           Date().timeIntervalSince(memo.creationDate) < maxAge
+        {
             return true
         }
         // maybe use the meta references dictionary?
-        var exists = false
-        queue.sync {
-            let url = cacheURL(forKey: key)
-            guard let modificationDate = modificationDateOfCacheEntry(at: url),
-                Date().timeIntervalSince(modificationDate) < maxAge
-            else { return }
-            exists = fileManager.fileExists(atPath: url.path)
-        }
-        return exists
+        let url = cacheURL(forKey: key)
+
+        guard let modificationDate = modificationDateOfCacheEntry(at: url),
+              Date().timeIntervalSince(modificationDate) < maxAge
+        else { return false }
+        return fileManager.fileExists(atPath: url.path)
     }
 
     public func get(forKey key: String, maxAge: TimeInterval = MemoryJar.defaultMaxAge) -> String? {
@@ -109,8 +109,8 @@ public final class MemoryJar {
                 return nil
             }
             // LRU update
-            queue.async {
-                self.touch(at: url)
+            queue.async(flags: .barrier) { [weak self] in
+                self?.touch(at: url)
             }
             return memo.value
         }
@@ -119,20 +119,22 @@ public final class MemoryJar {
          the same data, we need to wait for all outstanding operations before continuing, as
          another thread could be writing to disk.
          */
-        var value: String?
-        queue.sync {
-            // if we don't have a mod date, then make it expire
-            guard let modificationDate = modificationDateOfCacheEntry(at: url) else { return }
-            if Date().timeIntervalSince(modificationDate) > maxAge {
-                removeObject(forKey: key)
-                return
-            }
-            // reference block assignment
 
-            // Memory cache misse here and we should still be put into the memory cache.
+        // if we don't have a mod date, then make it expire
+        guard let modificationDate = modificationDateOfCacheEntry(at: url) else { return nil }
+        if Date().timeIntervalSince(modificationDate) > maxAge {
+            removeObject(forKey: key)
+            return nil
+        }
+
+        var value: String?
+        // reference block assignment
+        queue.sync {
+            // Memory cache misses here
+            // If we have a disk cache item, then also put it in memory cache
             if let contents = diskCacheItem(for: url) {
                 let memo = Memo(value: contents, creationDate: modificationDate)
-                self.memoryCache.setObject(memo, forKey: key as NSString)
+                memoryCache.setObject(memo, forKey: key as NSString)
                 value = contents
             }
         }
@@ -151,10 +153,11 @@ public final class MemoryJar {
             memoryCache.removeObject(forKey: key as NSString)
         }
         // write to disk in the background
-        queue.async {
-            let cacheURL = self.cacheURL(forKey: key)
-            self.writeDiskCacheItem(value: value, at: cacheURL)
-            self.rebalance()
+
+        let cacheURL = cacheURL(forKey: key)
+        queue.async(flags: .barrier) { [weak self] in
+            // heavy duty method should block all disk reads until done
+            self?.writeDiskCacheItem(value: value, at: cacheURL)
         }
     }
 
@@ -166,11 +169,13 @@ public final class MemoryJar {
         // remove from memory
         memoryCache.removeObject(forKey: key as NSString)
         // remove from disk cache
-        queue.async {
+        let f = fileManager
+        let cacheURLKey = cacheURL(forKey: key)
+        queue.async(flags: .barrier) { [weak self] in
             do {
-                try self.fileManager.removeItem(at: self.cacheURL(forKey: key))
+                try f.removeItem(at: cacheURLKey)
             } catch {
-                self.err(error.localizedDescription)
+                self?.err(error.localizedDescription)
             }
         }
     }
@@ -180,11 +185,13 @@ public final class MemoryJar {
         memoryCache.removeAllObjects()
 
         // remove disk cache
-        queue.async {
+        let f = fileManager
+        let url = cacheDirectoryURL
+        queue.async(flags: .barrier) { [weak self] in
             do {
-                try self.fileManager.removeItem(at: self.cacheDirectoryURL)
+                try f.removeItem(at: url)
             } catch {
-                self.err(error.localizedDescription)
+                self?.err(error.localizedDescription)
             }
         }
     }
@@ -196,6 +203,7 @@ public final class MemoryJar {
     }
 
     // Forces thread to pause while queue flushes tasks
+    // Useful for testing
     public func sync() {
         queue.sync { /* Wait, do nothing */ }
     }
@@ -206,7 +214,7 @@ public final class MemoryJar {
         return String(data: data, encoding: .utf8)
     }
 
-    func touch(at url: URL) {
+    private func touch(at url: URL) {
         do {
             try fileManager.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
         } catch {
@@ -214,7 +222,7 @@ public final class MemoryJar {
         }
     }
 
-    func modificationDateOfCacheEntry(at url: URL) -> Date? {
+    private func modificationDateOfCacheEntry(at url: URL) -> Date? {
         do {
             guard fileManager.fileExists(atPath: url.path) else { return nil }
             let atts = try fileManager.attributesOfItem(atPath: url.path)
@@ -225,8 +233,11 @@ public final class MemoryJar {
         return nil
     }
 
+    // All methods below should be called synchronously and preferrably within a barrier
+
     /// synchronous
     private func writeDiskCacheItem(value: String, at url: URL) {
+        defer { rebalance() }
         guard let contents = value.data(using: .utf8) else {
             #if DEBUG
                 err("Unable to content for value: \(value)")
@@ -260,7 +271,7 @@ public final class MemoryJar {
 
     private var referencesNeedRefresh: Bool {
         guard let lastModDate = lastDiskCacheUpdatedDate,
-            let lastCacheDirectoryModDate = modificationDateOfCacheEntry(at: cacheDirectoryURL)
+              let lastCacheDirectoryModDate = modificationDateOfCacheEntry(at: cacheDirectoryURL)
         else { return true }
 
         // Most file systems can only store up to 1 second of precision
@@ -276,8 +287,24 @@ public final class MemoryJar {
     /// Update the metadata reference for our garbage collector. `O(log n)`
     private func updateMetadata(key: String, modificationDate: Date, fileSize: Int) {
         let ref = ContentRef(key: key, modificationDate: modificationDate, fileSize: fileSize)
+        // We use a binarySearch on a sorted list of current files in LRU. We keep it sorted so that our
+        // Removal algorithm is almost constant time (see rebalance() )
         let insertionIndex = currentMetaRefs.binarySearch { $0.modificationDate < ref.modificationDate }
         currentMetaRefs.insert(ref, at: insertionIndex)
+    }
+
+    /// Rebalance our memory and disk capacity limits based on LRU through modificationDate. `O(1)`
+    private func rebalance() {
+        if referencesNeedRefresh { rebuildDiskCache() }
+
+        while currentMetaRefs.count > maxDiskCacheRecords || currentDisckCacheSize > maxDiskCacheRecordSizeBytes,
+              let ref = currentMetaRefs.first
+        {
+            let url = cacheURL(forKey: ref.key)
+            try? fileManager.removeItem(at: url)
+            currentDisckCacheSize -= ref.fileSize
+            currentMetaRefs.removeFirst()
+        }
     }
 
     // Rebuild the meta list at startup and if an external
@@ -292,8 +319,9 @@ public final class MemoryJar {
             while let key = enumerator.nextObject() as? String {
                 enumerator.skipDescendants()
                 if let attrs = enumerator.fileAttributes,
-                    let modDate = attrs[.modificationDate] as? Date,
-                    let fileSize = attrs[.size] as? Int {
+                   let modDate = attrs[.modificationDate] as? Date,
+                   let fileSize = attrs[.size] as? Int
+                {
                     currentDisckCacheSize += fileSize
                     updateMetadata(key: key, modificationDate: modDate, fileSize: fileSize)
                 }
@@ -302,22 +330,9 @@ public final class MemoryJar {
             err(error.localizedDescription)
         }
     }
-
-    /// Rebalance our memory and disk capacity limits based on LRU through modificationDate. `O(1)`
-    private func rebalance() {
-        if referencesNeedRefresh { rebuildDiskCache() }
-
-        while currentMetaRefs.count > maxDiskCacheRecords || currentDisckCacheSize > maxDiskCacheRecordSizeBytes,
-            let ref = currentMetaRefs.first {
-            let url = cacheURL(forKey: ref.key)
-            try? fileManager.removeItem(at: url)
-            currentDisckCacheSize -= ref.fileSize
-            currentMetaRefs.removeFirst()
-        }
-    }
 }
 
-extension RandomAccessCollection {
+private extension RandomAccessCollection {
     /// Finds such index N that predicate is true for all elements up to
     /// but not including the index N, and is false for all elements
     /// starting with index N.
@@ -337,9 +352,9 @@ extension RandomAccessCollection {
     }
 }
 
-extension String {
+public extension String {
     /// Returns a SHA1 for this string.
-    public var sha1: String {
+    var sha1: String {
         let data = Data(utf8)
         var digest = [UInt8](repeating: 0, count: Int(CC_SHA1_DIGEST_LENGTH))
         data.withUnsafeBytes {
