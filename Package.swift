@@ -1,11 +1,11 @@
-// swift-tools-version:5.3
+// swift-tools-version:5.5
 import PackageDescription
 
 let package = Package(
     name: "MemoryJar",
     platforms: [
-        .iOS(.v10),
-        .tvOS(.v11),
+        .iOS(.v14),
+        .tvOS(.v14),
     ],
     products: [
         .library(name: "MemoryJar", targets: ["MemoryJar"]),
