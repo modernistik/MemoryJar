@@ -7,22 +7,22 @@
 
 import CommonCrypto
 import Foundation
+#if !os(macOS)
+import UIKit
 
-extension Int {
-    var MBs: Int { self * 1024 * 1024 }
-}
-
-public final class MemoryJar {
+@available(macOS, unavailable)
+public final class PhotoJar {
+    
     /// Shared singleton with default cache location.
-    public static let shared = { MemoryJar() }()
+    public static let shared = { PhotoJar() }()
 
     // Object to hold in memory. NSCache is not Swift compat, therefore must
     // inheirt from NSObject.
     private class Memo: NSObject {
         let creationDate: Date
-        let value: String
+        let value: UIImage
 
-        init(value: String, creationDate: Date = Date()) {
+        init(value: UIImage, creationDate: Date = Date()) {
             self.value = value
             self.creationDate = creationDate
             super.init()
@@ -40,14 +40,14 @@ public final class MemoryJar {
         guard let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
             preconditionFailure("Failed to acquire cachesDirectory for application.")
         }
-        return dir.appendingPathComponent("_memjar", isDirectory: true)
+        return dir.appendingPathComponent("_photojar", isDirectory: true)
     }()
 
     // advanced players only. We can turn in var in the future for dynamic rebalancing.
     public var maxDiskCacheRecords = 1000
-    public var maxMemoryCacheRecordSizeBytes = 5.MBs
-    public var maxDiskCacheRecordSizeBytes = 20.MBs
-    public static var defaultMaxAge: TimeInterval = 86400 // 1.day
+    public var maxMemoryCacheRecordSizeBytes = 100.MBs
+    public var maxDiskCacheRecordSizeBytes: Int = 512.MBs
+    public static var defaultMaxAge: TimeInterval = 86400 * 7 // 7.days
     // Apple HFS+ level of accuracy in seconds
     private let fileSystemLevelAccuracy: TimeInterval = 1
 
@@ -64,7 +64,7 @@ public final class MemoryJar {
     private var memoryCache = NSCache<NSString, Memo>()
 
     // write/read queue
-    private let queue = DispatchQueue(label: "memory.jar", attributes: .concurrent)
+    private let queue = DispatchQueue(label: "photo.jar", attributes: .concurrent)
 
     public var cacheDirectoryPath: String {
         // ok
@@ -72,11 +72,11 @@ public final class MemoryJar {
         return cacheDirectoryURL.path
     }
 
-    public init(cacheDirectoryURL: URL = MemoryJar.defaultCacheDirectory) {
+    public init(cacheDirectoryURL: URL = PhotoJar.defaultCacheDirectory) {
         self.cacheDirectoryURL = cacheDirectoryURL
     }
 
-    public subscript(key: String) -> String? {
+    public subscript(key: String) -> UIImage? {
         get { get(forKey: key, maxAge: .infinity) }
         set(newValue) {
             if let newValue = newValue {
@@ -87,7 +87,7 @@ public final class MemoryJar {
         }
     }
 
-    public func hasValue(forKey key: String, maxAge: TimeInterval = MemoryJar.defaultMaxAge) -> Bool {
+    public func hasValue(forKey key: String, maxAge: TimeInterval = PhotoJar.defaultMaxAge) -> Bool {
         // memory pointer returned, not full cost retrieval.
         if let memo = memoryCache.object(forKey: key as NSString),
            Date().timeIntervalSince(memo.creationDate) < maxAge
@@ -103,7 +103,7 @@ public final class MemoryJar {
         return fileManager.fileExists(atPath: url.path)
     }
 
-    public func get(forKey key: String, maxAge: TimeInterval = MemoryJar.defaultMaxAge) -> String? {
+    public func get(forKey key: String, maxAge: TimeInterval = PhotoJar.defaultMaxAge) -> UIImage? {
         let url = cacheURL(forKey: key)
         // Check memory cache first
         if let memo = memoryCache.object(forKey: key as NSString) {
@@ -116,7 +116,8 @@ public final class MemoryJar {
             queue.async(flags: .barrier) { [weak self] in
                 self?.touch(at: url)
             }
-            return memo.value
+//            insecureLog("[PhotoJar] Found cached image memory")
+//            return memo.value
         }
         /** No memory entry? Then try disk cache
          Because another (or the same) thread could be accessing
@@ -131,7 +132,7 @@ public final class MemoryJar {
             return nil
         }
 
-        var value: String?
+        var value: UIImage?
         // reference block assignment
         queue.sync {
             // Memory cache misses here
@@ -140,14 +141,15 @@ public final class MemoryJar {
                 let memo = Memo(value: contents, creationDate: modificationDate)
                 memoryCache.setObject(memo, forKey: key as NSString)
                 value = contents
+//                insecureLog("[PhotoJar] Found cached image DISK")
             }
         }
         return value
     }
 
-    public func set(value: String, forKey key: String) {
+    public func set(value: UIImage, forKey key: String) {
         let totalBytes = key.maximumLengthOfBytes(using: key.fastestEncoding) +
-            value.maximumLengthOfBytes(using: value.fastestEncoding)
+            (value.pngData()?.count ?? 0)
 
         // write to memory if within limits
         if totalBytes < maxMemoryCacheRecordSizeBytes {
@@ -202,7 +204,7 @@ public final class MemoryJar {
 
     private func err(_ str: String) {
         #if DEBUG
-            print("[MemoryJar 🔥]: \(str)")
+            print("[PhotoJar 🔥]: \(str)")
         #endif
     }
 
@@ -212,10 +214,10 @@ public final class MemoryJar {
         queue.sync { /* Wait, do nothing */ }
     }
 
-    private func diskCacheItem(for url: URL) -> String? {
+    private func diskCacheItem(for url: URL) -> UIImage? {
         guard let data = fileManager.contents(atPath: url.path) else { return nil }
         touch(at: url)
-        return String(data: data, encoding: .utf8)
+        return UIImage(data: data)
     }
 
     private func touch(at url: URL) {
@@ -240,11 +242,12 @@ public final class MemoryJar {
     // All methods below should be called synchronously and preferrably within a barrier
 
     /// synchronous
-    private func writeDiskCacheItem(value: String, at url: URL) {
+    private func writeDiskCacheItem(value: UIImage, at url: URL) {
         defer { rebalance() }
-        guard let contents = value.data(using: .utf8) else {
+
+        guard let contents = value.pngData() else {
             #if DEBUG
-                err("Unable to content for value: \(value)")
+                err("Unable to content for value.")
             #endif
             return
         }
@@ -256,12 +259,14 @@ public final class MemoryJar {
         } catch {
             err(error.localizedDescription)
         }
-        guard fileManager.createFile(atPath: key,
-                                     contents: contents,
-                                     attributes: [.modificationDate: creationDate, .creationDate: creationDate])
-        else {
-            err("Unable to create cache file: \(url.path)")
-            return
+
+        do {
+            try contents.write(to: url, options: [.atomic])
+            try fileManager.setAttributes([.modificationDate: creationDate, .creationDate: creationDate], ofItemAtPath: key)
+        } catch {
+            #if DEBUG
+                err("[PhotoJar] Failed to write image to file: \(url.path)")
+            #endif
         }
 
         guard referencesNeedRefresh else {
@@ -335,35 +340,4 @@ public final class MemoryJar {
         }
     }
 }
-
-extension RandomAccessCollection {
-    /// Finds such index N that predicate is true for all elements up to
-    /// but not including the index N, and is false for all elements
-    /// starting with index N.
-    /// Behavior is undefined if there is no such N.
-    func binarySearch(predicate: (Element) -> Bool) -> Index {
-        var low = startIndex
-        var high = endIndex
-        while low != high {
-            let mid = index(low, offsetBy: distance(from: low, to: high) / 2)
-            if predicate(self[mid]) {
-                low = index(after: mid)
-            } else {
-                high = mid
-            }
-        }
-        return low
-    }
-}
-
-extension String {
-    /// Returns a SHA1 for this string.
-    var sha1: String {
-        let data = Data(utf8)
-        var digest = [UInt8](repeating: 0, count: Int(CC_SHA1_DIGEST_LENGTH))
-        data.withUnsafeBytes {
-            _ = CC_SHA1($0.baseAddress, CC_LONG(data.count), &digest)
-        }
-        return digest.map { String(format: "%02hhx", $0) }.joined()
-    }
-}
+#endif
