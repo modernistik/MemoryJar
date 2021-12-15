@@ -5,16 +5,19 @@
 //  Created by Anthony Persaud on 12/21/18.
 //
 
-import CommonCrypto
 import Foundation
 #if !os(macOS)
-import UIKit
+    import Combine
+    import UIKit
+#endif
+
+public
+typealias ImageCompletion = (UIImage) -> Void
 
 @available(macOS, unavailable)
-public final class PhotoJar {
-    
+public final class ImageJar {
     /// Shared singleton with default cache location.
-    public static let shared = { PhotoJar() }()
+    public static let shared = { ImageJar() }()
 
     // Object to hold in memory. NSCache is not Swift compat, therefore must
     // inheirt from NSObject.
@@ -40,12 +43,12 @@ public final class PhotoJar {
         guard let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
             preconditionFailure("Failed to acquire cachesDirectory for application.")
         }
-        return dir.appendingPathComponent("_photojar", isDirectory: true)
+        return dir.appendingPathComponent("_imagejar", isDirectory: true)
     }()
 
     // advanced players only. We can turn in var in the future for dynamic rebalancing.
-    public var maxDiskCacheRecords = 1000
-    public var maxMemoryCacheRecordSizeBytes = 100.MBs
+    public var maxDiskCacheRecords = 10000
+    public var maxMemoryCacheRecordSizeBytes = 10.MBs
     public var maxDiskCacheRecordSizeBytes: Int = 512.MBs
     public static var defaultMaxAge: TimeInterval = 86400 * 7 // 7.days
     // Apple HFS+ level of accuracy in seconds
@@ -64,7 +67,7 @@ public final class PhotoJar {
     private var memoryCache = NSCache<NSString, Memo>()
 
     // write/read queue
-    private let queue = DispatchQueue(label: "photo.jar", attributes: .concurrent)
+    private let queue = DispatchQueue(label: "image.jar", attributes: .concurrent)
 
     public var cacheDirectoryPath: String {
         // ok
@@ -72,7 +75,7 @@ public final class PhotoJar {
         return cacheDirectoryURL.path
     }
 
-    public init(cacheDirectoryURL: URL = PhotoJar.defaultCacheDirectory) {
+    public init(cacheDirectoryURL: URL = defaultCacheDirectory) {
         self.cacheDirectoryURL = cacheDirectoryURL
     }
 
@@ -87,7 +90,7 @@ public final class PhotoJar {
         }
     }
 
-    public func hasValue(forKey key: String, maxAge: TimeInterval = PhotoJar.defaultMaxAge) -> Bool {
+    public func hasValue(forKey key: String, maxAge: TimeInterval = defaultMaxAge) -> Bool {
         // memory pointer returned, not full cost retrieval.
         if let memo = memoryCache.object(forKey: key as NSString),
            Date().timeIntervalSince(memo.creationDate) < maxAge
@@ -103,7 +106,7 @@ public final class PhotoJar {
         return fileManager.fileExists(atPath: url.path)
     }
 
-    public func get(forKey key: String, maxAge: TimeInterval = PhotoJar.defaultMaxAge) -> UIImage? {
+    public func get(forKey key: String, maxAge: TimeInterval = defaultMaxAge) -> UIImage? {
         let url = cacheURL(forKey: key)
         // Check memory cache first
         if let memo = memoryCache.object(forKey: key as NSString) {
@@ -116,7 +119,6 @@ public final class PhotoJar {
             queue.async(flags: .barrier) { [weak self] in
                 self?.touch(at: url)
             }
-//            insecureLog("[PhotoJar] Found cached image memory")
 //            return memo.value
         }
         /** No memory entry? Then try disk cache
@@ -141,16 +143,17 @@ public final class PhotoJar {
                 let memo = Memo(value: contents, creationDate: modificationDate)
                 memoryCache.setObject(memo, forKey: key as NSString)
                 value = contents
-//                insecureLog("[PhotoJar] Found cached image DISK")
             }
         }
         return value
     }
 
     public func set(value: UIImage, forKey key: String) {
-        let totalBytes = key.maximumLengthOfBytes(using: key.fastestEncoding) +
-            (value.pngData()?.count ?? 0)
+        set(value: value, forKey: key, completion: nil)
+    }
 
+    public func set(value: UIImage, forKey key: String, completion: ImageCompletion? = nil) {
+        let totalBytes = value.pngData()?.count ?? 0
         // write to memory if within limits
         if totalBytes < maxMemoryCacheRecordSizeBytes {
             memoryCache.setObject(Memo(value: value), forKey: key as NSString)
@@ -164,6 +167,7 @@ public final class PhotoJar {
         queue.async(flags: .barrier) { [weak self] in
             // heavy duty method should block all disk reads until done
             self?.writeDiskCacheItem(value: value, at: cacheURL)
+            completion?(value)
         }
     }
 
@@ -204,7 +208,7 @@ public final class PhotoJar {
 
     private func err(_ str: String) {
         #if DEBUG
-            print("[PhotoJar 🔥]: \(str)")
+            print("[ImageJar 🔥]: \(str)")
         #endif
     }
 
@@ -265,7 +269,7 @@ public final class PhotoJar {
             try fileManager.setAttributes([.modificationDate: creationDate, .creationDate: creationDate], ofItemAtPath: key)
         } catch {
             #if DEBUG
-                err("[PhotoJar] Failed to write image to file: \(url.path)")
+                err("[ImageJar] Failed to write image to file: \(url.path)")
             #endif
         }
 
@@ -340,4 +344,66 @@ public final class PhotoJar {
         }
     }
 }
-#endif
+
+public extension ImageJar {
+    subscript(url: URL) -> UIImage? {
+        self[url.absoluteString]
+    }
+
+    func hasValue(forURL url: URL, maxAge: TimeInterval = defaultMaxAge) -> Bool {
+        hasValue(forKey: url.absoluteString, maxAge: maxAge)
+    }
+
+    func fetchIfNeeded(url: URL, maxAge: TimeInterval = defaultMaxAge) -> AnyPublisher<UIImage, Never> {
+        if let image = get(forKey: url.absoluteString, maxAge: maxAge) {
+            return CurrentValueSubject<UIImage, Never>(image).eraseToAnyPublisher()
+        }
+
+        let publisher = PassthroughSubject<UIImage, Never>()
+        var cancellable: AnyCancellable?
+
+        cancellable = fetchAndStore(url: url)
+            .receive(on: DispatchQueue.main)
+            .sink { _ in
+                cancellable?.cancel()
+                publisher.send(completion: .finished)
+            } receiveValue: { image in
+                publisher.send(image)
+            }
+
+        return publisher.eraseToAnyPublisher()
+    }
+
+    func fetchAndStore(url: URL) -> AnyPublisher<UIImage, Never> {
+        let publisher = PassthroughSubject<UIImage, Never>()
+        var cancellable: AnyCancellable?
+        cancellable = URLSession.shared.dataTaskPublisher(for: url)
+            .retry(3)
+            .map(\.data)
+            .receive(on: DispatchQueue.main)
+            .compactMap { UIImage(data: $0) }
+            .sink { _ in
+                cancellable?.cancel()
+            } receiveValue: { image in
+                ImageJar.shared.set(value: image, forURL: url) { image in
+                    DispatchQueue.main.async {
+                        publisher.send(image)
+                        publisher.send(completion: .finished)
+                    }
+                }
+            }
+        return publisher.eraseToAnyPublisher()
+    }
+
+    func get(forURL url: URL, maxAge: TimeInterval = defaultMaxAge) -> UIImage? {
+        get(forKey: url.absoluteString, maxAge: maxAge)
+    }
+
+    func set(value: UIImage, forURL url: URL, completion: ImageCompletion? = nil) {
+        set(value: value, forKey: url.absoluteString, completion: completion)
+    }
+
+    func removeObject(forURL url: URL) {
+        removeObject(forKey: url.absoluteString)
+    }
+}
